@@ -56,6 +56,28 @@ export function RealVoteAudit({ votes, studyId }: { votes: AuditVote[]; studyId:
   const originalRate = analyzed.length ? 100 * originalPositive / analyzed.length : null;
   const reviewedRate = reviewed.length ? 100 * reviewedPositive / reviewed.length : null;
   const delta = originalRate !== null && reviewedRate !== null ? reviewedRate - originalRate : null;
+
+  const [excludeFlagged, setExcludeFlagged] = useState(false);
+  const effectiveExcluded = useMemo(() => new Set([...excluded, ...(excludeFlagged ? flagged.map(v => v.id) : [])]), [excluded, excludeFlagged, flagged]);
+  const captionStats = useMemo(() => {
+    const groups = new Map<string, ReviewedVote[]>();
+    for (const vote of analyzed) groups.set(vote.caption, [...(groups.get(vote.caption) ?? []), vote]);
+    return [...groups.entries()].map(([caption, rows]) => {
+      const remaining = rows.filter(v => !effectiveExcluded.has(v.id));
+      const before = rows.filter(positive).length / rows.length * 100;
+      const after = remaining.length ? remaining.filter(positive).length / remaining.length * 100 : null;
+      return { caption, total: rows.length, included: remaining.length, flagged: rows.filter(v => v.reasons.length).length, before, after, change: after === null ? null : after - before };
+    }).sort((a,b) => Math.abs(b.change ?? 0) - Math.abs(a.change ?? 0));
+  }, [analyzed, effectiveExcluded]);
+  const csvEscape = (value: string | number | null) => '"' + String(value ?? "").replace(/"/g, '""') + '"';
+  const downloadCSV = () => {
+    const columns = ["caption_id","total_votes","flagged_votes","included_votes","original_positive_percent","reviewed_positive_percent","change_pp"];
+    const rows = captionStats.map(s => [s.caption,s.total,s.flagged,s.included,s.before.toFixed(1),s.after?.toFixed(1) ?? "",s.change?.toFixed(1) ?? ""]);
+    const csv = [columns.join(","),...rows.map(row => row.map(csvEscape).join(","))].join("\r\n");
+    const url = URL.createObjectURL(new Blob([csv], {type:"text/csv;charset=utf-8"}));
+    const a = document.createElement("a"); a.href = url; a.download = `study-${studyId}-caption-comparison.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
   const filtered = analyzed.filter(v => {
     if (filter === "flagged" && !v.reasons.length) return false;
     if (filter === "excluded" && !excludedSet.has(v.id)) return false;
@@ -105,6 +127,33 @@ export function RealVoteAudit({ votes, studyId }: { votes: AuditVote[]; studyId:
             <div><p className="text-sm text-slate-500">After exclusions</p><p className="mt-1 text-3xl font-semibold">{pct(reviewedPositive, reviewed.length)}</p><p className="mt-1 text-xs text-slate-500">{reviewedPositive} positive / {reviewed.length} votes</p></div>
             <div className="rounded-lg bg-slate-50 p-4 dark:bg-slate-800/60"><p className="text-sm text-slate-500 dark:text-slate-400">Change</p><p className="mt-1 text-3xl font-semibold">{delta === null ? "—" : (delta > 0 ? "+" : "") + delta.toFixed(1) + " pp"}</p><p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Percentage-point difference</p></div>
           </div>
+        </section>
+
+
+        <section className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 sm:p-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div><h2 className="text-lg font-semibold">Caption-level comparison</h2><p className="mt-1 text-sm text-slate-500">Compare the share of “funny” and “very funny” votes for each caption.</p></div>
+            <button className={button} onClick={downloadCSV} disabled={!captionStats.length}>Export comparison CSV ↓</button>
+          </div>
+          <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-lg bg-indigo-50 p-4 text-sm dark:bg-indigo-950/40">
+            <input type="checkbox" className="mt-0.5 h-4 w-4 accent-indigo-600" checked={excludeFlagged} onChange={e => setExcludeFlagged(e.target.checked)}/>
+            <span><strong>Preview excluding all flagged votes</strong><span className="mt-1 block text-xs text-slate-600 dark:text-slate-400">Instantly compare before and after. Manually excluded votes are also removed. No database records are changed.</span></span>
+          </label>
+          <div className="mt-5 flex flex-wrap gap-4 text-xs text-slate-500"><span className="flex items-center gap-2"><span className="inline-block h-2.5 w-2.5 rounded bg-slate-400"/> Original</span><span className="flex items-center gap-2"><span className="inline-block h-2.5 w-2.5 rounded bg-indigo-600"/> After exclusions</span></div>
+          <div className="mt-4 space-y-6">
+            {captionStats.map((s,i) => <div key={s.caption} className="border-b border-slate-100 pb-5 last:border-0 last:pb-0 dark:border-slate-800">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div><p className="font-medium">Caption {i+1} <span className="font-mono text-xs font-normal text-slate-500" title={s.caption}>({shortId(s.caption)})</span></p><p className="text-xs text-slate-500">{s.included} of {s.total} votes included · {s.flagged} flagged</p></div>
+                <span className={`rounded-md px-2 py-1 text-xs font-semibold ${s.change === null ? "bg-slate-100 text-slate-600" : Math.abs(s.change) >= 5 ? "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300" : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"}`}>{s.change === null ? "No votes left" : (s.change > 0 ? "+" : "") + s.change.toFixed(1) + " pp"}</span>
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-3"><span className="w-14 shrink-0 text-xs text-slate-500">Original</span><div className="h-3 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div className="h-full rounded-full bg-slate-400" style={{width:s.before+"%"}}/></div><span className="w-14 text-right text-xs font-medium">{s.before.toFixed(1)}%</span></div>
+                <div className="flex items-center gap-3"><span className="w-14 shrink-0 text-xs text-slate-500">Reviewed</span><div className="h-3 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div className="h-full rounded-full bg-indigo-600" style={{width:(s.after ?? 0)+"%"}}/></div><span className="w-14 text-right text-xs font-medium">{s.after === null ? "N/A" : s.after.toFixed(1)+"%"}</span></div>
+              </div>
+            </div>)}
+            {!captionStats.length && <p className="py-8 text-center text-sm text-slate-500">No caption votes to compare yet.</p>}
+          </div>
+          <p className="mt-5 text-xs text-slate-500">Changes show sensitivity to exclusion rules, not proof that the remaining ratings represent ground truth. CSV contains caption IDs and aggregated results, not participant identifiers.</p>
         </section>
 
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
