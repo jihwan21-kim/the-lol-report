@@ -52,6 +52,10 @@ export function RealVoteAudit({votes,studyId}:{votes:AuditVote[];studyId:number}
       return {id,label:"Humor "+(index+1),total:rows.length,kept:kept.length,flagged:rows.filter(v=>v.reasons.length).length,before,after,delta:after===null?null:after-before};
     }).sort((a,b)=>a.label.localeCompare(b.label,undefined,{numeric:true}));
   },[analyzed,effectiveExcluded]);
+  const ratingLevels = ["very funny","funny","meh","not very funny","not funny"];
+  const ratings = [...ratingLevels.filter(v=>analyzed.some(row=>row.value===v)),...Array.from(new Set(analyzed.map(v=>v.value))).filter(v=>!ratingLevels.includes(v))];
+  const bubbleCounts = useMemo(()=>stats.map(s=>ratings.map(rating=>included.filter(v=>v.caption===s.id && v.value===rating).length)),[stats,ratings.join("|"),included]);
+  const maxBubble = Math.max(1,...bubbleCounts.flat());
   const overallBefore=percent(analyzed.filter(isPositive).length,analyzed.length);
   const overallAfter=percent(included.filter(isPositive).length,included.length);
   const exportCsv=()=>{
@@ -69,13 +73,13 @@ export function RealVoteAudit({votes,studyId}:{votes:AuditVote[];studyId:number}
   const current=Math.min(page,pageCount-1);
   const visible=filtered.slice(current*20,current*20+20);
 
-  // SVG chart: x-axis is caption, y-axis is percentage of positive votes (0-100).
-  const width=900,height=370,left=62,right=20,top=25,bottom=70;
-  const plotW=width-left-right,plotH=height-top-bottom;
-  const y=(value:number)=>top+(100-value)/100*plotH;
-  const band=plotW/Math.max(1,stats.length);
-  const barW=Math.min(38,band*0.28);
-
+  // Categorical bubble matrix: one circle per (humor, rating), area proportional to votes.
+  const width=940,left=155,right=32,top=36,bottom=78;
+  const rowH=76;
+  const height=top+bottom+Math.max(1,ratings.length)*rowH;
+  const plotW=width-left-right;
+  const colW=plotW/Math.max(1,stats.length);
+  const radius=(count:number)=>count===0?0:Math.max(4,Math.sqrt(count/maxBubble)*Math.min(30,colW*.31));
   return <main className="min-h-screen bg-slate-50 px-4 py-6 text-slate-900 dark:bg-slate-950 dark:text-slate-100 sm:px-8">
     <div className="mx-auto max-w-7xl space-y-5">
       <header className="flex flex-wrap items-start justify-between gap-4">
@@ -98,24 +102,36 @@ export function RealVoteAudit({votes,studyId}:{votes:AuditVote[];studyId:number}
         </section>
 
         <section className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 sm:p-6">
-          <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-lg font-semibold">Humor rating scatter plot: original vs filtered</h2><p className="mt-1 text-sm text-slate-500">Each dot is a humor/caption. X-axis: humor · Y-axis: positive rating (%)</p></div><button className={button} disabled={!stats.length} onClick={exportCsv}>Download CSV ↓</button></div>
-          <div className="mt-4 flex gap-5 text-xs text-slate-600 dark:text-slate-300"><span className="flex items-center gap-2"><span className="h-3 w-3 rounded-sm bg-slate-400 rounded-full"/>Original</span><span className="flex items-center gap-2"><span className="h-3 w-3 rounded-sm bg-indigo-600 rounded-full"/>Filtered</span></div>
-          {stats.length ? <div className="mt-3 w-full overflow-x-auto"><svg viewBox={`0 0 ${width} ${height}`} className="min-w-[580px] w-full" role="img" aria-label="Scatter plot with individual dots for original and filtered humor ratings, showing positive rating percentage on the vertical axis">
-            {[0,25,50,75,100].map(tick=><g key={tick}><line x1={left} x2={width-right} y1={y(tick)} y2={y(tick)} stroke="currentColor" opacity=".12"/><text x={left-12} y={y(tick)+4} textAnchor="end" fontSize="13" fill="currentColor">{tick}%</text></g>)}
-            <line x1={left} x2={left} y1={top} y2={height-bottom} stroke="currentColor" opacity=".55"/>
-            <line x1={left} x2={width-right} y1={height-bottom} y2={height-bottom} stroke="currentColor" opacity=".55"/>
-            <line x1={left} x2={width-right} y1={y(50)} y2={y(50)} stroke="#059669" strokeDasharray="6 5" opacity=".7"/>
-            <text x={width-right-5} y={y(50)-7} textAnchor="end" fontSize="12" fill="#059669">50% funny threshold</text>
-            {stats.map((s,i)=>{const center=left+band*(i+.5);const xBefore=center-9,xAfter=center+9;return <g key={s.id}>
-              {s.after!==null && <line x1={xBefore} x2={xAfter} y1={y(s.before)} y2={y(s.after)} stroke="#a5b4fc" strokeWidth="2" opacity=".8"/>}
-              <circle cx={xBefore} cy={y(s.before)} r="8" fill="#94a3b8" stroke="white" strokeWidth="2"><title>{s.label}: original {s.before.toFixed(1)}% ({s.total} votes)</title></circle>
-              {s.after!==null && <circle cx={xAfter} cy={y(s.after)} r="8" fill="#4f46e5" stroke="white" strokeWidth="2"><title>{s.label}: filtered {s.after.toFixed(1)}% ({s.kept} votes)</title></circle>}
-              <text x={center} y={height-bottom+22} textAnchor="middle" fontSize={Math.min(13,band/5)} fill="currentColor">{s.label}</text>
-            </g>})}
-            <text x={width/2} y={height-10} textAnchor="middle" fontSize="14" fontWeight="600" fill="currentColor">Humor / Caption</text>
-            <text transform={`translate(18 ${height/2-12}) rotate(-90)`} textAnchor="middle" fontSize="14" fontWeight="600" fill="currentColor">Funny votes (%)</text>
-          </svg></div> : <p className="py-16 text-center text-sm text-slate-500">No votes to chart yet.</p>}
-          <p className="mt-2 text-xs text-slate-500">Funny = “funny” or “very funny”. This measures audience ratings, not objective funniness.</p>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div><h2 className="text-lg font-semibold">Humor × rating: vote distribution</h2><p className="mt-1 text-sm text-slate-500">Each dot represents the number of votes for a humor and rating combination. Larger dots mean more votes.</p></div>
+            <button className={button} onClick={exportCsv} disabled={!stats.length}>Download CSV ↓</button>
+          </div>
+          <div className="mt-4 flex flex-wrap items-center gap-5 text-xs text-slate-500">
+            <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-indigo-600"/>Included votes</span>
+            <span>Dot area ∝ vote count</span>
+            <span>Move the time slider to filter votes live</span>
+          </div>
+          {stats.length && ratings.length ? <div className="mt-3 w-full overflow-x-auto">
+            <svg viewBox={`0 0 ${width} ${height}`} className="w-full min-w-[620px]" role="img" aria-label="Bubble chart with humor on horizontal axis and rating categories on vertical axis. Bubble size represents included vote count.">
+              {ratings.map((rating,j)=>{const cy=top+(j+.5)*rowH;return <g key={rating}>
+                <line x1={left} x2={width-right} y1={cy} y2={cy} stroke="currentColor" opacity=".12"/>
+                <text x={left-14} y={cy+5} textAnchor="end" fontSize="14" fill="currentColor">{rating}</text>
+              </g>})}
+              {stats.map((s,i)=>{const cx=left+(i+.5)*colW;return <g key={s.id}>
+                <line x1={cx} x2={cx} y1={top} y2={height-bottom} stroke="currentColor" opacity=".09"/>
+                <text x={cx} y={height-bottom+28} textAnchor="middle" fontSize={Math.min(15,colW*.16)} fill="currentColor">{s.label}</text>
+              </g>})}
+              <line x1={left} x2={left} y1={top} y2={height-bottom} stroke="currentColor" opacity=".5"/>
+              <line x1={left} x2={width-right} y1={height-bottom} y2={height-bottom} stroke="currentColor" opacity=".5"/>
+              {stats.map((s,i)=>ratings.map((rating,j)=>{const count=bubbleCounts[i]?.[j]??0;if(!count)return null;const cx=left+(i+.5)*colW,cy=top+(j+.5)*rowH;return <g key={s.id+rating}>
+                <circle cx={cx} cy={cy} r={radius(count)} fill="#4f46e5" fillOpacity=".78" stroke="#312e81" strokeWidth="1.2"><title>{s.label} · {rating}: {count} votes after filtering</title></circle>
+                <text x={cx} y={cy+4} textAnchor="middle" fontSize="12" fontWeight="700" fill="white" pointerEvents="none">{count}</text>
+              </g>}))}
+              <text x={width/2} y={height-12} textAnchor="middle" fontSize="14" fontWeight="600" fill="currentColor">Humor</text>
+              <text transform={`translate(18 ${height/2}) rotate(-90)`} textAnchor="middle" fontSize="14" fontWeight="600" fill="currentColor">Rating</text>
+            </svg>
+          </div> : <p className="py-16 text-center text-sm text-slate-500">No vote ratings available.</p>}
+          <p className="mt-2 text-xs text-slate-500">Bubble counts reflect votes remaining after your current time threshold and manual exclusions. Synthetic test data for Study 1.</p>
         </section>
 
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
