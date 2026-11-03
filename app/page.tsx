@@ -1,146 +1,72 @@
 import { TopNavbar } from "@/components/top-navbar";
 import { createClient } from "@/utils/supabase/server";
+import { RealVoteAudit, type AuditVote } from "@/components/real-vote-audit";
 import Link from "next/link";
 
-const NEW_STYLE_MIN_STUDY_ID = 7;
+export const dynamic = "force-dynamic";
+const PAGE_SIZE = 1000;
 
 export default async function Home() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  const [
-    { data: studies, error: studiesError },
-    { data: newStyleStudies, error: newStyleStudiesError },
-  ] = await Promise.all([
-    supabase.from("studies").select("id").order("id", { ascending: false }).limit(1),
-    supabase
-      .from("studies")
-      .select("id")
-      .gte("id", NEW_STYLE_MIN_STUDY_ID)
-      .order("id", { ascending: false })
-      .limit(1),
-  ]);
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data: profile } = user
+    ? await supabase.from("profiles").select("is_superadmin").eq("id", user.id).maybeSingle()
+    : { data: null };
 
-  if (studiesError) {
-    throw new Error(`Unable to load studies: ${studiesError.message}`);
+  const { data: studies, error: studyError } = await supabase.from("studies")
+    .select("id,slug").order("id", {ascending:false}).limit(20);
+  if (studyError) throw new Error("Unable to load studies: " + studyError.message);
+  const selected = studies?.find(s => s.id === 1) ?? studies?.[0];
+  const studyId = selected?.id;
+  const votes: AuditVote[] = [];
+
+  if (user && profile?.is_superadmin && studyId) {
+    const mappingIds: number[] = [];
+    for (let from = 0;; from += PAGE_SIZE) {
+      const {data,error} = await supabase.from("study_caption_mappings")
+        .select("id").eq("study_id",studyId).order("id",{ascending:true}).range(from,from+PAGE_SIZE-1);
+      if (error) throw new Error("Unable to load mappings: "+error.message);
+      mappingIds.push(...(data ?? []).map(row => row.id));
+      if (!data || data.length < PAGE_SIZE) break;
+    }
+    for (let offset=0; offset<mappingIds.length; offset+=100) {
+      const chunk=mappingIds.slice(offset,offset+100);
+      for (let from=0;;from+=PAGE_SIZE) {
+        const {data,error}=await supabase.from("study_caption_vote_events")
+          .select("id,profile_id,caption_id,vote_value,time_to_vote_ms,created_datetime_utc")
+          .in("study_caption_mapping_id",chunk).order("id",{ascending:true}).range(from,from+PAGE_SIZE-1);
+        if (error) throw new Error("Unable to load votes: "+error.message);
+        for (const v of data ?? []) votes.push({
+          id:v.id,user:v.profile_id,caption:v.caption_id,value:v.vote_value,
+          timeMs:v.time_to_vote_ms,at:v.created_datetime_utc
+        });
+        if (!data || data.length<PAGE_SIZE) break;
+      }
+    }
+    votes.sort((a,b)=>a.id-b.id);
   }
 
-  if (newStyleStudiesError) {
-    throw new Error(`Unable to load new style studies: ${newStyleStudiesError.message}`);
-  }
-
-  const latestStudyId = studies?.[0]?.id ?? null;
-  const latestNewStyleStudyId = newStyleStudies?.[0]?.id ?? null;
-  const additionalReports = [
-    {
-      title: "Study detail",
-      description: "Review study vote details",
-      href: latestStudyId ? `/study/${latestStudyId}/study-detail` : null,
-    },
-    {
-      title: "Study engagement risk",
-      description: "Find low-engagement raters",
-      href: latestStudyId ? `/study/${latestStudyId}/engagement-risk` : null,
-    },
-    {
-      title: "Study-to-study comparison",
-      description: "Compare two studies",
-      href: "/reports/study-comparison",
-    },
-    {
-      title: "Weekly humor study summary",
-      description: "Track weekly study trends",
-      href: "/reports/weekly-study-summary",
-    },
-    {
-      title: "Study voting span by user",
-      description: "Review voting duration",
-      href: latestStudyId ? `/study/${latestStudyId}/vote-timing` : null,
-    },
-    {
-      title: "Study upvote percentage by user",
-      description: "Compare individual upvote rates",
-      href: latestStudyId ? `/study/${latestStudyId}/user-upvote-rate` : null,
-    },
-    {
-      title: "Selected user report",
-      description: "Analyze selected raters together",
-      href: latestStudyId ? `/study/${latestStudyId}/selected-user-report` : null,
-    },
-  ];
-
-  return (
-    <div className="min-h-screen bg-background flex flex-col">
-      <TopNavbar />
-      <main className="page-shell flex-1 flex items-center justify-center p-6">
-        <section className="app-panel w-full max-w-2xl rounded-2xl p-8">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <p className="app-kicker text-xs font-semibold uppercase tracking-[0.24em]">
-                Humor Study Stats
-              </p>
-              <h1 className="mt-3 text-3xl font-semibold">Dashboard</h1>
-            </div>
+  return <div className="min-h-screen bg-background">
+    <TopNavbar />
+    {user && profile?.is_superadmin && studyId ? <>
+      <RealVoteAudit votes={votes} studyId={studyId}/>
+      <section className="mx-auto max-w-7xl px-4 pb-12 sm:px-8">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+          <h2 className="text-lg font-semibold">Other research reports</h2>
+          <p className="mt-1 text-sm text-slate-500">Explore additional views of the study.</p>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <Link className="rounded-lg border border-slate-200 px-4 py-2 text-sm dark:border-slate-700" href={`/study/${studyId}/study-detail`}>Study detail</Link>
+            <Link className="rounded-lg border border-slate-200 px-4 py-2 text-sm dark:border-slate-700" href={`/study/${studyId}/vote-timing`}>Vote timing</Link>
+            <Link className="rounded-lg border border-slate-200 px-4 py-2 text-sm dark:border-slate-700" href={`/study/${studyId}/user-upvote-rate`}>User upvote rates</Link>
+            <Link className="rounded-lg border border-slate-200 px-4 py-2 text-sm dark:border-slate-700" href="/reports/study-comparison">Study comparison</Link>
           </div>
-
-          <p className="app-muted mt-3 text-sm">
-            Signed in as <span className="font-semibold text-foreground">{user?.email}</span>
-          </p>
-
-          <div className="mt-8">
-            {latestNewStyleStudyId ? (
-              <Link
-                href={`/study/${latestNewStyleStudyId}/new-style-report`}
-                className="app-button app-button-primary flex min-h-44 w-full items-center justify-center rounded-2xl px-8 py-10 text-center text-4xl font-semibold tracking-tight transition sm:text-5xl"
-              >
-                Latest Study
-              </Link>
-            ) : (
-              <span className="app-button flex min-h-44 w-full cursor-not-allowed items-center justify-center rounded-2xl px-8 py-10 text-center text-4xl font-semibold tracking-tight opacity-60 sm:text-5xl">
-                Latest Study
-              </span>
-            )}
-          </div>
-
-          <div className="mt-6 flex flex-wrap items-end justify-between gap-4">
-            <details className="group ml-auto flex w-full max-w-lg flex-col items-end">
-              <summary className="app-button order-2 flex cursor-pointer list-none items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition marker:content-none">
-                More reports
-                <span className="text-xs transition group-open:rotate-180" aria-hidden="true">
-                  &#9650;
-                </span>
-              </summary>
-              <div className="app-card order-1 mb-3 grid w-full gap-2 rounded-xl p-3 sm:grid-cols-2">
-                {additionalReports.map((reportOption) =>
-                  reportOption.href ? (
-                    <Link
-                      key={reportOption.title}
-                      href={reportOption.href}
-                      className="app-button rounded-lg px-3 py-2 text-sm transition"
-                    >
-                      <span className="block font-medium">{reportOption.title}</span>
-                      <span className="app-muted mt-0.5 block text-xs">
-                        {reportOption.description}
-                      </span>
-                    </Link>
-                  ) : (
-                    <span
-                      key={reportOption.title}
-                      className="app-button cursor-not-allowed rounded-lg px-3 py-2 text-sm opacity-60"
-                    >
-                      <span className="block font-medium">{reportOption.title}</span>
-                      <span className="app-muted mt-0.5 block text-xs">
-                        {reportOption.description}
-                      </span>
-                    </span>
-                  ),
-                )}
-              </div>
-            </details>
-          </div>
-        </section>
-      </main>
-    </div>
-  );
+        </div>
+      </section>
+    </> : <main className="mx-auto flex min-h-[65vh] max-w-xl items-center justify-center p-6">
+      <div className="w-full rounded-2xl border border-slate-200 bg-white p-8 text-center dark:border-slate-800 dark:bg-slate-900">
+        <h1 className="text-2xl font-semibold">Humor Study Analytics</h1>
+        <p className="mt-3 text-sm text-slate-500">{!user ? "Sign in to access the research dashboard." : !profile?.is_superadmin ? "A superadmin account is required to view vote integrity data." : "No studies available yet."}</p>
+      </div>
+    </main>}
+  </div>;
 }
