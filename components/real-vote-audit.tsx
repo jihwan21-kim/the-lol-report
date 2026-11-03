@@ -98,15 +98,18 @@ export function RealVoteAudit({votes,studyId}:{votes:AuditVote[];studyId:number}
         </section>
 
         <section className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 sm:p-6">
-          <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-lg font-semibold">Humor ratings: original vs filtered</h2><p className="mt-1 text-sm text-slate-500">X-axis: humor/caption · Y-axis: funny votes (%)</p></div><button className={button} disabled={!stats.length} onClick={exportCsv}>Download CSV ↓</button></div>
-          <div className="mt-4 flex gap-5 text-xs text-slate-600 dark:text-slate-300"><span className="flex items-center gap-2"><span className="h-3 w-3 rounded-sm bg-slate-400"/>Original</span><span className="flex items-center gap-2"><span className="h-3 w-3 rounded-sm bg-indigo-600"/>Filtered</span></div>
-          {stats.length ? <div className="mt-3 w-full overflow-x-auto"><svg viewBox={`0 0 ${width} ${height}`} className="min-w-[580px] w-full" role="img" aria-label="Grouped bar chart showing original and filtered positive rating percentages by humor">
+          <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-lg font-semibold">Humor rating scatter plot: original vs filtered</h2><p className="mt-1 text-sm text-slate-500">Each dot is a humor/caption. X-axis: humor · Y-axis: positive rating (%)</p></div><button className={button} disabled={!stats.length} onClick={exportCsv}>Download CSV ↓</button></div>
+          <div className="mt-4 flex gap-5 text-xs text-slate-600 dark:text-slate-300"><span className="flex items-center gap-2"><span className="h-3 w-3 rounded-sm bg-slate-400 rounded-full"/>Original</span><span className="flex items-center gap-2"><span className="h-3 w-3 rounded-sm bg-indigo-600 rounded-full"/>Filtered</span></div>
+          {stats.length ? <div className="mt-3 w-full overflow-x-auto"><svg viewBox={`0 0 ${width} ${height}`} className="min-w-[580px] w-full" role="img" aria-label="Scatter plot with individual dots for original and filtered humor ratings, showing positive rating percentage on the vertical axis">
             {[0,25,50,75,100].map(tick=><g key={tick}><line x1={left} x2={width-right} y1={y(tick)} y2={y(tick)} stroke="currentColor" opacity=".12"/><text x={left-12} y={y(tick)+4} textAnchor="end" fontSize="13" fill="currentColor">{tick}%</text></g>)}
             <line x1={left} x2={left} y1={top} y2={height-bottom} stroke="currentColor" opacity=".55"/>
             <line x1={left} x2={width-right} y1={height-bottom} y2={height-bottom} stroke="currentColor" opacity=".55"/>
-            {stats.map((s,i)=>{const center=left+band*(i+.5);return <g key={s.id}>
-              <rect x={center-barW-3} y={y(s.before)} width={barW} height={Math.max(0,height-bottom-y(s.before))} rx="3" fill="#94a3b8"><title>{s.label}: original {s.before.toFixed(1)}%</title></rect>
-              {s.after!==null && <rect x={center+3} y={y(s.after)} width={barW} height={Math.max(0,height-bottom-y(s.after))} rx="3" fill="#4f46e5"><title>{s.label}: filtered {s.after.toFixed(1)}%</title></rect>}
+            <line x1={left} x2={width-right} y1={y(50)} y2={y(50)} stroke="#059669" strokeDasharray="6 5" opacity=".7"/>
+            <text x={width-right-5} y={y(50)-7} textAnchor="end" fontSize="12" fill="#059669">50% funny threshold</text>
+            {stats.map((s,i)=>{const center=left+band*(i+.5);const xBefore=center-9,xAfter=center+9;return <g key={s.id}>
+              {s.after!==null && <line x1={xBefore} x2={xAfter} y1={y(s.before)} y2={y(s.after)} stroke="#a5b4fc" strokeWidth="2" opacity=".8"/>}
+              <circle cx={xBefore} cy={y(s.before)} r="8" fill="#94a3b8" stroke="white" strokeWidth="2"><title>{s.label}: original {s.before.toFixed(1)}% ({s.total} votes)</title></circle>
+              {s.after!==null && <circle cx={xAfter} cy={y(s.after)} r="8" fill="#4f46e5" stroke="white" strokeWidth="2"><title>{s.label}: filtered {s.after.toFixed(1)}% ({s.kept} votes)</title></circle>}
               <text x={center} y={height-bottom+22} textAnchor="middle" fontSize={Math.min(13,band/5)} fill="currentColor">{s.label}</text>
             </g>})}
             <text x={width/2} y={height-10} textAnchor="middle" fontSize="14" fontWeight="600" fill="currentColor">Humor / Caption</text>
