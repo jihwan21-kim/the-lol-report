@@ -83,9 +83,9 @@ export function RealVoteAudit({ votes, studyId }: { votes: AuditVote[]; studyId:
           <div>
             <p className="text-xs font-semibold uppercase tracking-widest text-indigo-600 dark:text-indigo-400">Research dashboard / Study {studyId}</p>
             <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">Vote integrity</h1>
-            <p className="mt-2 max-w-2xl text-sm text-slate-500 dark:text-slate-400">Spot unusual voting, review individual records, and compare results before and after exclusions.</p>
+            <p className="mt-2 max-w-2xl text-sm text-slate-500 dark:text-slate-400">Spot unusual voting, review individual records, and compare results before and after exclusions. {studyId === 1 ? "This study uses synthetic test votes, not real research participants." : ""}</p>
           </div>
-          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">Study #{studyId} · Live database</span>
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">Study #{studyId} · {studyId === 1 ? "Synthetic test data" : "Live database"}</span>
         </header>
 
         <section aria-label="Overview" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
