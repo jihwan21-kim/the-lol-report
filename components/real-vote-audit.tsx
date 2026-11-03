@@ -4,7 +4,8 @@ import { useMemo, useState } from "react";
 
 export type AuditVote = { id:number; user:string; caption:string; value:string; timeMs:number|null; at:string };
 type Vote = AuditVote & { reasons:string[] };
-const isPositive = (v:AuditVote) => v.value === "funny" || v.value === "very funny";
+const isPositive = (v:AuditVote) => ["funny","very funny","up","vote up","1"].includes(v.value.toLowerCase());
+const voteDirection = (v:AuditVote) => isPositive(v) ? "Vote Up" : "Vote Down";
 const percent = (n:number,d:number) => d ? (n/d*100).toFixed(1)+"%" : "N/A";
 const csvCell = (v:string|number|null) => '"' + String(v ?? "").replace(/"/g,'""') + '"';
 const button = "rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:hover:bg-slate-800";
@@ -53,9 +54,8 @@ export function RealVoteAudit({votes,studyId}:{votes:AuditVote[];studyId:number}
       return {id,label:"Humor "+(index+1),total:rows.length,kept:kept.length,flagged:rows.filter(v=>v.reasons.length).length,before,after,delta:after===null?null:after-before};
     }).sort((a,b)=>a.label.localeCompare(b.label,undefined,{numeric:true}));
   },[analyzed,effectiveExcluded]);
-  const ratingLevels = ["very funny","funny","meh","not very funny","not funny"];
-  const ratings = [...ratingLevels.filter(v=>analyzed.some(row=>row.value===v)),...Array.from(new Set(analyzed.map(v=>v.value))).filter(v=>!ratingLevels.includes(v))];
-  const bubbleCounts = useMemo(()=>stats.map(s=>ratings.map(rating=>included.filter(v=>v.caption===s.id && v.value===rating).length)),[stats,ratings.join("|"),included]);
+  const ratings = ["Vote Up","Vote Down"];
+  const bubbleCounts = useMemo(()=>stats.map(s=>ratings.map(rating=>included.filter(v=>v.caption===s.id && voteDirection(v)===rating).length)),[stats,included]);
   const maxBubble = Math.max(1,...bubbleCounts.flat());
   const humorsPerPage = 10;
   const humorPages = Math.max(1,Math.ceil(stats.length/humorsPerPage));
@@ -109,7 +109,7 @@ export function RealVoteAudit({votes,studyId}:{votes:AuditVote[];studyId:number}
 
         <section className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <div><h2 className="text-lg font-semibold">Humor × rating: vote distribution</h2><p className="mt-1 text-sm text-slate-500">Each dot represents votes for a humor and rating combination. Show 10 humors per page. Larger circles mean more votes.</p></div>
+            <div><h2 className="text-lg font-semibold">Humor × vote: Up / Down distribution</h2><p className="mt-1 text-sm text-slate-500">Each dot represents votes for a humor and rating combination. Vote Up and Vote Down by humor. Ten humors per page; circle area shows vote count.</p></div>
             <button className={button} onClick={exportCsv} disabled={!stats.length}>Download CSV ↓</button>
           </div>
           <div className="mt-4 flex flex-wrap items-center gap-5 text-xs text-slate-500">
@@ -138,7 +138,7 @@ export function RealVoteAudit({votes,studyId}:{votes:AuditVote[];studyId:number}
               <text transform={`translate(18 ${height/2}) rotate(-90)`} textAnchor="middle" fontSize="14" fontWeight="600" fill="currentColor">Rating</text>
             </svg>
           </div> : <p className="py-16 text-center text-sm text-slate-500">No vote ratings available.</p>}
-          <p className="mt-2 text-xs text-slate-500">Bubble counts reflect votes remaining after your current time threshold and manual exclusions. Synthetic test data for Study 1.</p>
+          <p className="mt-2 text-xs text-slate-500">Bubble counts reflect votes remaining after filtering. For Study 1, synthetic six-level test ratings are grouped into Up (funny/very funny) and Down (all other ratings); original stored records are unchanged.</p>
         </section>
 
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
