@@ -74,12 +74,12 @@ export function RealVoteAudit({votes,studyId}:{votes:AuditVote[];studyId:number}
   const visible=filtered.slice(current*20,current*20+20);
 
   // Categorical bubble matrix: one circle per (humor, rating), area proportional to votes.
-  const width=940,left=155,right=32,top=36,bottom=78;
+  const width=Math.max(940,stats.length*65+190),left=155,right=32,top=36,bottom=78;
   const rowH=76;
   const height=top+bottom+Math.max(1,ratings.length)*rowH;
   const plotW=width-left-right;
   const colW=plotW/Math.max(1,stats.length);
-  const radius=(count:number)=>count===0?0:Math.max(4,Math.sqrt(count/maxBubble)*Math.min(30,colW*.31));
+  const radius=(count:number)=>count===0?0:Math.max(4,Math.sqrt(count/maxBubble)*Math.min(26,colW*.34));
   return <main className="min-h-screen bg-slate-50 px-4 py-6 text-slate-900 dark:bg-slate-950 dark:text-slate-100 sm:px-8">
     <div className="mx-auto max-w-7xl space-y-5">
       <header className="flex flex-wrap items-start justify-between gap-4">
@@ -103,7 +103,7 @@ export function RealVoteAudit({votes,studyId}:{votes:AuditVote[];studyId:number}
 
         <section className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <div><h2 className="text-lg font-semibold">Humor × rating: vote distribution</h2><p className="mt-1 text-sm text-slate-500">Each dot represents the number of votes for a humor and rating combination. Larger dots mean more votes.</p></div>
+            <div><h2 className="text-lg font-semibold">Humor × rating: vote distribution</h2><p className="mt-1 text-sm text-slate-500">Each dot represents votes for a humor and rating combination. Scroll horizontally to explore all 100 humors; larger dots mean more votes.</p></div>
             <button className={button} onClick={exportCsv} disabled={!stats.length}>Download CSV ↓</button>
           </div>
           <div className="mt-4 flex flex-wrap items-center gap-5 text-xs text-slate-500">
@@ -112,7 +112,7 @@ export function RealVoteAudit({votes,studyId}:{votes:AuditVote[];studyId:number}
             <span>Move the time slider to filter votes live</span>
           </div>
           {stats.length && ratings.length ? <div className="mt-3 w-full overflow-x-auto">
-            <svg viewBox={`0 0 ${width} ${height}`} className="w-full min-w-[620px]" role="img" aria-label="Bubble chart with humor on horizontal axis and rating categories on vertical axis. Bubble size represents included vote count.">
+            <svg viewBox={`0 0 ${width} ${height}`} style={{width:width+"px",maxWidth:"none"}} role="img" aria-label="Bubble chart with humor on horizontal axis and rating categories on vertical axis. Bubble size represents included vote count.">
               {ratings.map((rating,j)=>{const cy=top+(j+.5)*rowH;return <g key={rating}>
                 <line x1={left} x2={width-right} y1={cy} y2={cy} stroke="currentColor" opacity=".12"/>
                 <text x={left-14} y={cy+5} textAnchor="end" fontSize="14" fill="currentColor">{rating}</text>
