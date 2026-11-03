@@ -33,11 +33,11 @@ export default async function Home() {
       const chunk=mappingIds.slice(offset,offset+100);
       for (let from=0;;from+=PAGE_SIZE) {
         const {data,error}=await supabase.from("study_caption_vote_events")
-          .select("id,profile_id,caption_id,vote_value,time_to_vote_ms,created_datetime_utc")
+          .select("id,profile_id,session_id,caption_id,vote_value,time_to_vote_ms,created_datetime_utc")
           .in("study_caption_mapping_id",chunk).order("id",{ascending:true}).range(from,from+PAGE_SIZE-1);
         if (error) throw new Error("Unable to load votes: "+error.message);
         for (const v of data ?? []) votes.push({
-          id:v.id,user:v.profile_id,caption:v.caption_id,value:v.vote_value,
+          id:v.id,user:studyId===1 && v.session_id ? v.session_id : v.profile_id,caption:v.caption_id,value:v.vote_value,
           timeMs:v.time_to_vote_ms,at:v.created_datetime_utc
         });
         if (!data || data.length<PAGE_SIZE) break;
