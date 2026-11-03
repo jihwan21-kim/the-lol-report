@@ -23,6 +23,11 @@ const redirectToLogin = (request: NextRequest, error?: string) => {
 };
 
 export const updateSession = async (request: NextRequest) => {
+  // Standalone demo uses synthetic data only.
+  if (request.nextUrl.pathname === "/vote-audit") {
+    return NextResponse.next();
+  }
+
   let response = NextResponse.next({
     request: {
       headers: request.headers,
