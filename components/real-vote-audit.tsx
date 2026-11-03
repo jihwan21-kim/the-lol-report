@@ -20,6 +20,7 @@ const button = "rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium
 const input = "rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100";
 
 export function RealVoteAudit({ votes, studyId }: { votes: AuditVote[]; studyId: number }) {
+  const [activeView, setActiveView] = useState<"charts" | "review" | "overview">("charts");
   const [speed, setSpeed] = useState(1000);
   const [burst, setBurst] = useState(8);
   const [excluded, setExcluded] = useState<number[]>([]);
@@ -109,14 +110,39 @@ export function RealVoteAudit({ votes, studyId }: { votes: AuditVote[]; studyId:
           </div>
           <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">Study #{studyId} · {studyId === 1 ? "Synthetic test data" : "Live database"}</span>
         </header>
+        <nav className="flex flex-wrap gap-2 border-b border-slate-200 pb-3 dark:border-slate-800" aria-label="Dashboard sections">
+          {([["charts","Charts & comparison"],["review","Review votes"],["overview","Overview"]] as const).map(([key,label]) =>
+            <button key={key} onClick={() => setActiveView(key)} aria-current={activeView === key ? "page" : undefined}
+              className={`rounded-lg px-4 py-2.5 text-sm font-semibold transition ${activeView === key ? "bg-indigo-600 text-white shadow-sm" : "bg-white text-slate-600 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"}`}>{label}</button>)}
+        </nav>
 
-        <section aria-label="Overview" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {metric("Total votes", analyzed.length, "All recorded votes")}
-          {metric("Needs review", flagged.length, pct(flagged.length, analyzed.length) + " of total", true)}
-          {metric("Excluded", excluded.length, "Only in this browser session")}
-          {metric("Included", reviewed.length, "Used in reviewed results")}
+        <section className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 sm:p-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div><h2 className="text-lg font-semibold">Caption-level comparison</h2><p className="mt-1 text-sm text-slate-500">Compare the share of “funny” and “very funny” votes for each caption.</p></div>
+            <button className={button} onClick={downloadCSV} disabled={!captionStats.length}>Export comparison CSV ↓</button>
+          </div>
+          <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-lg bg-indigo-50 p-4 text-sm dark:bg-indigo-950/40">
+            <input type="checkbox" className="mt-0.5 h-4 w-4 accent-indigo-600" checked={excludeFlagged} onChange={e => setExcludeFlagged(e.target.checked)}/>
+            <span><strong>Preview excluding all flagged votes</strong><span className="mt-1 block text-xs text-slate-600 dark:text-slate-400">Instantly compare before and after. Manually excluded votes are also removed. No database records are changed.</span></span>
+          </label>
+          <div className="mt-5 flex flex-wrap gap-4 text-xs text-slate-500"><span className="flex items-center gap-2"><span className="inline-block h-2.5 w-2.5 rounded bg-slate-400"/> Original</span><span className="flex items-center gap-2"><span className="inline-block h-2.5 w-2.5 rounded bg-indigo-600"/> After exclusions</span></div>
+          <div className="mt-4 space-y-6">
+            {captionStats.map((s,i) => <div key={s.caption} className="border-b border-slate-100 pb-5 last:border-0 last:pb-0 dark:border-slate-800">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div><p className="font-medium">Caption {i+1} <span className="font-mono text-xs font-normal text-slate-500" title={s.caption}>({shortId(s.caption)})</span></p><p className="text-xs text-slate-500">{s.included} of {s.total} votes included · {s.flagged} flagged</p></div>
+                <span className={`rounded-md px-2 py-1 text-xs font-semibold ${s.change === null ? "bg-slate-100 text-slate-600" : Math.abs(s.change) >= 5 ? "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300" : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"}`}>{s.change === null ? "No votes left" : (s.change > 0 ? "+" : "") + s.change.toFixed(1) + " pp"}</span>
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-3"><span className="w-14 shrink-0 text-xs text-slate-500">Original</span><div className="h-3 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div className="h-full rounded-full bg-slate-400" style={{width:s.before+"%"}}/></div><span className="w-14 text-right text-xs font-medium">{s.before.toFixed(1)}%</span></div>
+                <div className="flex items-center gap-3"><span className="w-14 shrink-0 text-xs text-slate-500">Reviewed</span><div className="h-3 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div className="h-full rounded-full bg-indigo-600" style={{width:(s.after ?? 0)+"%"}}/></div><span className="w-14 text-right text-xs font-medium">{s.after === null ? "N/A" : s.after.toFixed(1)+"%"}</span></div>
+              </div>
+            </div>)}
+            {!captionStats.length && <p className="py-8 text-center text-sm text-slate-500">No caption votes to compare yet.</p>}
+          </div>
+          <p className="mt-5 text-xs text-slate-500">Changes show sensitivity to exclusion rules, not proof that the remaining ratings represent ground truth. CSV contains caption IDs and aggregated results, not participant identifiers.</p>
         </section>
 
+        {activeView === "charts" && <>
         <section className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 sm:p-6">
           <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
             <div><h2 className="text-lg font-semibold">Impact on results</h2><p className="text-sm text-slate-500 dark:text-slate-400">Positive = funny or very funny</p></div>
@@ -156,6 +182,17 @@ export function RealVoteAudit({ votes, studyId }: { votes: AuditVote[]; studyId:
           <p className="mt-5 text-xs text-slate-500">Changes show sensitivity to exclusion rules, not proof that the remaining ratings represent ground truth. CSV contains caption IDs and aggregated results, not participant identifiers.</p>
         </section>
 
+        </>}
+        {activeView === "overview" && <>
+        <section aria-label="Overview" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {metric("Total votes", analyzed.length, "All recorded votes")}
+          {metric("Needs review", flagged.length, pct(flagged.length, analyzed.length) + " of total", true)}
+          {metric("Excluded", excluded.length, "Only in this browser session")}
+          {metric("Included", reviewed.length, "Used in reviewed results")}
+        </section>
+
+        </>}
+        {activeView === "review" && <>
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-5 dark:border-slate-800">
             <div><h2 className="text-lg font-semibold">Review votes</h2><p className="text-sm text-slate-500 dark:text-slate-400">Flags suggest a closer look, not confirmed abuse.</p></div>
@@ -196,6 +233,7 @@ export function RealVoteAudit({ votes, studyId }: { votes: AuditVote[]; studyId:
             <div className="flex items-center gap-3"><button className={button} disabled={currentPage === 0} onClick={() => setPage(p => p - 1)}>Previous</button><span>{currentPage + 1} / {totalPages}</span><button className={button} disabled={currentPage + 1 >= totalPages} onClick={() => setPage(p => p + 1)}>Next</button></div>
           </div>
         </section>
+        </>}
         <p className="text-xs text-slate-500 dark:text-slate-400">Exclusions are temporary and never modify the database. A flag is a heuristic, not a finding of misconduct.</p>
       </div>
     </main>
