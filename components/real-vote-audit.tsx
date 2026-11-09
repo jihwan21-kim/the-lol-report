@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 
 export type AuditVote = { id:number; user:string; caption:string; value:string; timeMs:number|null; at:string };
 type Vote = AuditVote & { reasons:string[] };
+type ParticipantRisk = { user:string; total:number; fast:number; fastShare:number; maxBurst:number; dominantShare:number; reasons:string[] };
 const isPositive = (v:AuditVote) => ["funny","very funny","up","vote up","1"].includes(v.value.toLowerCase());
 const voteDirection = (v:AuditVote) => isPositive(v) ? "Vote Up" : "Vote Down";
 const percent = (n:number,d:number) => d ? (n/d*100).toFixed(1)+"%" : "N/A";
@@ -11,11 +12,13 @@ const csvCell = (v:string|number|null) => '"' + String(v ?? "").replace(/"/g,'""
 const button = "rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:hover:bg-slate-800";
 
 export function RealVoteAudit({votes,studyId}:{votes:AuditVote[];studyId:number}) {
-  const [tab,setTab] = useState<"charts"|"review"|"overview">("charts");
+  const [tab,setTab] = useState<"charts"|"participants"|"review"|"overview">("charts");
   const [seconds,setSeconds] = useState(1);
   const [burst,setBurst] = useState(8);
   const [removeBurst,setRemoveBurst] = useState(false);
   const [excluded,setExcluded] = useState<number[]>([]);
+  const [excludedUsers,setExcludedUsers] = useState<string[]>([]);
+  const [participantFilter,setParticipantFilter] = useState<"flagged"|"all">("flagged");
   const [query,setQuery] = useState("");
   const [page,setPage] = useState(0);
   const [reviewFilter,setReviewFilter] = useState<"flagged"|"all"|"excluded">("flagged");
@@ -38,20 +41,59 @@ export function RealVoteAudit({votes,studyId}:{votes:AuditVote[];studyId:number}
     });
   },[votes,seconds,burst]);
   const flagged=analyzed.filter(v=>v.reasons.length>0);
+  // A participant is a review candidate when they exhibit sustained fast votes,
+  // a 60-second voting burst, or nearly identical vote directions.
+  // No participant is automatically excluded from the study.
+  const participants=useMemo<ParticipantRisk[]>(()=>{
+    const groups=new Map<string,Vote[]>();
+    for(const vote of analyzed) {
+      const rows=groups.get(vote.user)??[];
+      rows.push(vote);
+      groups.set(vote.user,rows);
+    }
+    return Array.from(groups,([user,rows])=>{
+      const total=rows.length;
+      const fast=rows.filter(v=>v.timeMs!==null && v.timeMs>=0 && v.timeMs<seconds*1000).length;
+      const fastShare=total ? fast/total : 0;
+      const positive=rows.filter(isPositive).length;
+      const dominantShare=total ? Math.max(positive,total-positive)/total : 0;
+      const timestamps=rows.map(v=>Date.parse(v.at)).filter(Number.isFinite).sort((a,b)=>a-b);
+      let start=0,maxBurst=0;
+      for(let end=0;end<timestamps.length;end++){
+        while(timestamps[end]-timestamps[start]>60000)start++;
+        maxBurst=Math.max(maxBurst,end-start+1);
+      }
+      const reasons=[
+        ...(total>=5 && seconds>0 && fastShare>=0.6 ? ["≥60% fast votes"]:[]),
+        ...(maxBurst>=burst ? ["High-frequency burst"]:[]),
+        ...(total>=8 && dominantShare>=0.9 ? ["≥90% same vote direction"]:[])
+      ];
+      return {user,total,fast,fastShare,maxBurst,dominantShare,reasons};
+    }).sort((a,b)=>b.reasons.length-a.reasons.length||b.total-a.total||a.user.localeCompare(b.user));
+  },[analyzed,seconds,burst]);
+  const flaggedParticipants=participants.filter(p=>p.reasons.length>0);
   const effectiveExcluded=useMemo(()=>new Set([...excluded,...analyzed.filter(v=>
     (v.timeMs!==null && v.timeMs>=0 && v.timeMs<seconds*1000) ||
     (removeBurst && v.reasons.includes("High frequency"))
-  ).map(v=>v.id)]),[excluded,analyzed,seconds,removeBurst]);
+  ).map(v=>v.id),...analyzed.filter(v=>excludedUsers.includes(v.user)).map(v=>v.id)]),[excluded,analyzed,seconds,removeBurst,excludedUsers]);
   const included=analyzed.filter(v=>!effectiveExcluded.has(v.id));
   const stats=useMemo(()=>{
     const groups=new Map<string,Vote[]>();
     for(const v of analyzed) groups.set(v.caption,[...(groups.get(v.caption)??[]),v]);
-    return [...groups].map(([id,rows],index)=>{
+    const base=Array.from(groups,([id,rows],index)=>{
       const kept=rows.filter(v=>!effectiveExcluded.has(v.id));
       const before=100*rows.filter(isPositive).length/rows.length;
       const after=kept.length ? 100*kept.filter(isPositive).length/kept.length : null;
       return {id,label:"Humor "+(index+1),total:rows.length,kept:kept.length,flagged:rows.filter(v=>v.reasons.length).length,before,after,delta:after===null?null:after-before};
-    }).sort((a,b)=>a.label.localeCompare(b.label,undefined,{numeric:true}));
+    });
+    // Ranks use descending positive-vote percentage and a stable ID tie-break.
+    // A humor with no retained votes has no filtered rank.
+    const beforeRanks=new Map([...base].sort((a,b)=>b.before-a.before||a.id.localeCompare(b.id)).map((s,i)=>[s.id,i+1]));
+    const afterRanks=new Map(base.filter(s=>s.after!==null).sort((a,b)=>(b.after??0)-(a.after??0)||a.id.localeCompare(b.id)).map((s,i)=>[s.id,i+1]));
+    return base.map(s=>({
+      ...s,beforeRank:beforeRanks.get(s.id)??null,afterRank:afterRanks.get(s.id)??null,
+      rankChange:beforeRanks.has(s.id)&&afterRanks.has(s.id)?(beforeRanks.get(s.id)??0)-(afterRanks.get(s.id)??0):null
+    })).sort((a,b)=>a.label.localeCompare(b.label,undefined,{numeric:true}));
   },[analyzed,effectiveExcluded]);
   const ratings = ["Vote Up","Vote Down"];
   const bubbleCounts = useMemo(()=>stats.map(s=>ratings.map(rating=>included.filter(v=>v.caption===s.id && voteDirection(v)===rating).length)),[stats,included]);
@@ -60,8 +102,8 @@ export function RealVoteAudit({votes,studyId}:{votes:AuditVote[];studyId:number}
   const overallBefore=percent(analyzed.filter(isPositive).length,analyzed.length);
   const overallAfter=percent(included.filter(isPositive).length,included.length);
   const exportCsv=()=>{
-    const header=["caption_id","total_votes","included_votes","flagged_votes","original_positive_pct","filtered_positive_pct","difference_pp","fast_vote_threshold_seconds","remove_high_frequency"];
-    const lines=stats.map(s=>[s.id,s.total,s.kept,s.flagged,s.before.toFixed(2),s.after?.toFixed(2)??"",s.delta?.toFixed(2)??"",seconds,String(removeBurst)].map(csvCell).join(","));
+    const header=["caption_id","total_votes","included_votes","flagged_votes","original_positive_pct","filtered_positive_pct","difference_pp","original_rank","filtered_rank","rank_change","fast_vote_threshold_seconds","remove_high_frequency","excluded_participants"];
+    const lines=stats.map(s=>[s.id,s.total,s.kept,s.flagged,s.before.toFixed(2),s.after?.toFixed(2)??"",s.delta?.toFixed(2)??"",s.beforeRank??"",s.afterRank??"",s.rankChange??"",seconds,String(removeBurst),excludedUsers.length].map(csvCell).join(","));
     const url=URL.createObjectURL(new Blob([[header.join(","),...lines].join("\r\n")],{type:"text/csv;charset=utf-8"}));
     const link=document.createElement("a");link.href=url;link.download=`study-${studyId}-humor-comparison.csv`;link.click();URL.revokeObjectURL(url);
   };
