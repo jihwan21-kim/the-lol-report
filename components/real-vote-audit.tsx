@@ -10,6 +10,18 @@ const voteDirection = (v:AuditVote) => isPositive(v) ? "Vote Up" : "Vote Down";
 const percent = (n:number,d:number) => d ? (n/d*100).toFixed(1)+"%" : "N/A";
 const csvCell = (v:string|number|null) => '"' + String(v ?? "").replace(/"/g,'""') + '"';
 const button = "rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:hover:bg-slate-800";
+const comparisonColumns = [
+  { key: "humor", label: "Humor" },
+  { key: "original", label: "Original funny %" },
+  { key: "filtered", label: "Filtered funny %" },
+  { key: "change", label: "Change" },
+  { key: "originalRank", label: "Original rank" },
+  { key: "filteredRank", label: "Filtered rank" },
+  { key: "rankShift", label: "Rank shift" },
+  { key: "votesLeft", label: "Votes left" },
+  { key: "result", label: "Result" },
+] as const;
+type ComparisonSortKey = (typeof comparisonColumns)[number]["key"];
 
 export function RealVoteAudit({votes,studyId}:{votes:AuditVote[];studyId:number}) {
   const [tab,setTab] = useState<"charts"|"participants"|"review"|"overview">("charts");
@@ -22,6 +34,7 @@ export function RealVoteAudit({votes,studyId}:{votes:AuditVote[];studyId:number}
   const [query,setQuery] = useState("");
   const [page,setPage] = useState(0);
   const [reviewFilter,setReviewFilter] = useState<"flagged"|"all"|"excluded">("flagged");
+  const [comparisonSort,setComparisonSort] = useState<{key:ComparisonSortKey; direction:"asc"|"desc"}>({key:"humor",direction:"asc"});
   const manual = useMemo(()=>new Set(excluded),[excluded]);
   const analyzed = useMemo<Vote[]>(()=>{
     const byUser=new Map<string,number[]>();
@@ -95,6 +108,31 @@ export function RealVoteAudit({votes,studyId}:{votes:AuditVote[];studyId:number}
       rankChange:beforeRanks.has(s.id)&&afterRanks.has(s.id)?(beforeRanks.get(s.id)??0)-(afterRanks.get(s.id)??0):null
     })).sort((a,b)=>a.label.localeCompare(b.label,undefined,{numeric:true}));
   },[analyzed,effectiveExcluded]);
+  const sortedStats=useMemo(()=>{
+    const value=(row:(typeof stats)[number]):number|null=>{
+      switch(comparisonSort.key){
+        case "humor": return Number(row.label.slice("Humor ".length));
+        case "original": return row.before;
+        case "filtered": return row.after;
+        case "change": return row.delta;
+        case "originalRank": return row.beforeRank;
+        case "filteredRank": return row.afterRank;
+        case "rankShift": return row.rankChange;
+        case "votesLeft": return row.kept;
+        case "result": return row.after===null ? null : row.after>=50 ? 1 : 0;
+      }
+    };
+    return [...stats].sort((a,b)=>{
+      const left=value(a),right=value(b);
+      // No remaining votes means N/A; keep these rows last in either direction.
+      if(left===null || right===null){
+        if(left===right)return Number(a.label.slice(6))-Number(b.label.slice(6));
+        return left===null ? 1 : -1;
+      }
+      const comparison=(left-right)*(comparisonSort.direction==="asc"?1:-1);
+      return comparison || Number(a.label.slice(6))-Number(b.label.slice(6));
+    });
+  },[stats,comparisonSort]);
   const ratings = ["Vote Up","Vote Down"];
   const bubbleCounts = useMemo(()=>stats.map(s=>ratings.map(rating=>included.filter(v=>v.caption===s.id && voteDirection(v)===rating).length)),[stats,included]);
   const maxBubble = Math.max(1,...bubbleCounts.flat());
@@ -179,8 +217,8 @@ export function RealVoteAudit({votes,studyId}:{votes:AuditVote[];studyId:number}
         </section>
 
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-          <div className="flex flex-wrap items-center justify-between gap-3 p-5"><div><h2 className="text-lg font-semibold">Is each humor rated funny?</h2><p className="text-sm text-slate-500">Compare positive rates and rank movement. Positive-rate ties use caption ID. “Insufficient” means no votes remain.</p></div><button className={button} onClick={exportCsv} disabled={!stats.length}>Export results</button></div>
-          <div className="overflow-x-auto"><table className="w-full min-w-[660px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-800"><tr>{["Humor","Original funny %","Filtered funny %","Change","Original rank","Filtered rank","Rank shift","Votes left","Result"].map(h=><th className="px-4 py-3" key={h}>{h}</th>)}</tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-800">{stats.map(s=><tr key={s.id}><td className="px-4 py-3 font-medium" title={s.id}>{s.label}</td><td className="px-4 py-3">{s.before.toFixed(1)}%</td><td className="px-4 py-3 font-semibold">{s.after===null?"N/A":s.after.toFixed(1)+"%"}</td><td className="px-4 py-3">{s.delta===null?"—":(s.delta>0?"+":"")+s.delta.toFixed(1)+" pp"}</td><td className="px-4 py-3">#{s.beforeRank}</td><td className="px-4 py-3">{s.afterRank===null?"N/A":"#"+s.afterRank}</td><td className="px-4 py-3 font-semibold">{s.rankChange===null?"—":s.rankChange>0?"↑ "+s.rankChange:s.rankChange<0?"↓ "+Math.abs(s.rankChange):"No change"}</td><td className="px-4 py-3">{s.kept} / {s.total}</td><td className="px-4 py-3"><span className={`rounded-md px-2 py-1 text-xs font-semibold ${s.after===null?"bg-slate-100 text-slate-600":s.after>=50?"bg-emerald-50 text-emerald-700":"bg-rose-50 text-rose-700"}`}>{s.after===null?"Insufficient":s.after>=50?"Rated funny":"Rated not funny"}</span></td></tr>)}</tbody></table>{!stats.length&&<p className="p-8 text-center text-sm text-slate-500">No humor ratings available.</p>}</div>
+          <div className="flex flex-wrap items-center justify-between gap-3 p-5"><div><h2 className="text-lg font-semibold">Is each humor rated funny?</h2><p className="text-sm text-slate-500">Compare positive rates and rank movement. Click a column heading to sort; click again to reverse. “Insufficient” means no votes remain.</p></div><button className={button} onClick={exportCsv} disabled={!stats.length}>Export results</button></div>
+          <div className="overflow-x-auto"><table className="w-full min-w-[850px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-800"><tr>{comparisonColumns.map(({key,label})=><th className="px-3 py-3" key={key} scope="col" aria-sort={comparisonSort.key===key?(comparisonSort.direction==="asc"?"ascending":"descending"):"none"}><button type="button" className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-sm text-left font-semibold hover:text-indigo-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 dark:hover:text-indigo-400" onClick={()=>setComparisonSort(old=>({key,direction:old.key===key?(old.direction==="asc"?"desc":"asc"):(key==="humor"?"asc":"desc")}))}>{label}<span aria-hidden="true" className={comparisonSort.key===key?"text-indigo-600 dark:text-indigo-400":"text-slate-400"}>{comparisonSort.key===key?(comparisonSort.direction==="asc"?"↑":"↓"):"↕"}</span></button></th>)}</tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-800">{sortedStats.map(s=><tr key={s.id}><td className="px-4 py-3 font-medium" title={s.id}>{s.label}</td><td className="px-4 py-3">{s.before.toFixed(1)}%</td><td className="px-4 py-3 font-semibold">{s.after===null?"N/A":s.after.toFixed(1)+"%"}</td><td className="px-4 py-3">{s.delta===null?"—":(s.delta>0?"+":"")+s.delta.toFixed(1)+" pp"}</td><td className="px-4 py-3">#{s.beforeRank}</td><td className="px-4 py-3">{s.afterRank===null?"N/A":"#"+s.afterRank}</td><td className="px-4 py-3 font-semibold">{s.rankChange===null?"—":s.rankChange>0?"↑ "+s.rankChange:s.rankChange<0?"↓ "+Math.abs(s.rankChange):"No change"}</td><td className="px-4 py-3">{s.kept} / {s.total}</td><td className="px-4 py-3"><span className={`rounded-md px-2 py-1 text-xs font-semibold ${s.after===null?"bg-slate-100 text-slate-600":s.after>=50?"bg-emerald-50 text-emerald-700":"bg-rose-50 text-rose-700"}`}>{s.after===null?"Insufficient":s.after>=50?"Rated funny":"Rated not funny"}</span></td></tr>)}</tbody></table>{!stats.length&&<p className="p-8 text-center text-sm text-slate-500">No humor ratings available.</p>}</div>
         </section>
       </>}
 
