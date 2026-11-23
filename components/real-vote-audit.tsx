@@ -145,6 +145,25 @@ export function RealVoteAudit({votes,studyId}:{votes:AuditVote[];studyId:number}
   const shownBubbleCounts=shownStats.map((_,i)=>bubbleCounts[chartStart+i]??[0,0]);
   const overallBefore=percent(analyzed.filter(isPositive).length,analyzed.length);
   const overallAfter=percent(included.filter(isPositive).length,included.length);
+  const exportCsv=()=>{
+    const header=["caption_id","total_votes","included_votes","flagged_votes","original_positive_pct","filtered_positive_pct","difference_pp","original_rank","filtered_rank","rank_change","fast_vote_threshold_seconds","remove_high_frequency","excluded_participants"];
+    const lines=stats.map(s=>[s.id,s.total,s.kept,s.flagged,s.before.toFixed(2),s.after?.toFixed(2)??"",s.delta?.toFixed(2)??"",s.beforeRank??"",s.afterRank??"",s.rankChange??"",seconds,String(removeBurst),excludedUsers.length].map(csvCell).join(","));
+    const url=URL.createObjectURL(new Blob([[header.join(","),...lines].join("\r\n")],{type:"text/csv;charset=utf-8"}));
+    const link=document.createElement("a");link.href=url;link.download=`study-${studyId}-humor-comparison.csv`;link.click();URL.revokeObjectURL(url);
+  };
+  const filtered=analyzed.filter(v=>{
+    if(reviewFilter==="flagged" && !v.reasons.length) return false;
+    if(reviewFilter==="excluded" && !effectiveExcluded.has(v.id)) return false;
+    return !query || [String(v.id),v.user,v.caption,v.value].some(s=>s.toLowerCase().includes(query.toLowerCase()));
+  });
+  const pageCount=Math.max(1,Math.ceil(filtered.length/20));
+  const current=Math.min(page,pageCount-1);
+  const visible=filtered.slice(current*20,current*20+20);
+  const width=1100,left=120,right=20,top=28,bottom=38;
+  const rowH=70;
+  const height=top+bottom+Math.max(1,ratings.length)*rowH;
+  const plotW=width-left-right;
+  const colW=plotW/Math.max(1,shownStats.length);
   const rankImprovements=stats.filter(s=>s.rankChange!==null && s.rankChange>0).sort((a,b)=>(b.rankChange??0)-(a.rankChange??0)).slice(0,5);
   const rankDeclines=stats.filter(s=>s.rankChange!==null && s.rankChange<0).sort((a,b)=>(a.rankChange??0)-(b.rankChange??0)).slice(0,5);
   return <main className="min-h-screen bg-slate-50 px-4 py-6 text-slate-900 dark:bg-slate-950 dark:text-slate-100 sm:px-8">
@@ -206,7 +225,7 @@ export function RealVoteAudit({votes,studyId}:{votes:AuditVote[];studyId:number}
                 const y=top+j*rowH+8;
                 const cellWidth=colW*.86;
                 const color=j===0?"#2563eb":"#f97316";
-                const opacity=count===0?.12:.2+.8*(count/maxBubble);
+                const opacity=count===0 ? 0.12 : 0.2+0.8*(count/maxBubble);
                 return <g key={s.id+rating}>
                   <rect x={x} y={y} width={cellWidth} height={rowH-24} rx="6" fill={color} fillOpacity={opacity} stroke={color} strokeOpacity=".5">
                     <title>{s.label} · {rating}: {count} included votes</title>
