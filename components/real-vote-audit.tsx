@@ -215,7 +215,10 @@ export function RealVoteAudit({votes,studyId}:{votes:AuditVote[];studyId:number}
               <text transform={`translate(18 ${height/2}) rotate(-90)`} textAnchor="middle" fontSize="14" fontWeight="600" fill="currentColor">Rating</text>
             </svg>
           </div> : <p className="py-16 text-center text-sm text-slate-500">No vote ratings available.</p>}
-          <p cla        <section className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 sm:p-6">
+          <p className="mt-2 text-xs text-slate-500">Bubble counts reflect votes remaining after filtering. For Study 1, synthetic six-level test ratings are grouped into Up (funny/very funny) and Down (all other ratings); original stored records are unchanged.</p>
+        </section>
+
+        <section className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 sm:p-6">
           <div className="mb-4">
             <p className="text-xs font-semibold uppercase tracking-wider text-indigo-600">At a glance</p>
             <h2 className="mt-1 text-lg font-semibold">Biggest ranking changes after filtering</h2>
@@ -247,9 +250,6 @@ export function RealVoteAudit({votes,studyId}:{votes:AuditVote[];studyId:number}
               </div>;
             })}
           </div>
-        </section>
-
-ssName="mt-2 text-xs text-slate-500">Bubble counts reflect votes remaining after filtering. For Study 1, synthetic six-level test ratings are grouped into Up (funny/very funny) and Down (all other ratings); original stored records are unchanged.</p>
         </section>
 
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
