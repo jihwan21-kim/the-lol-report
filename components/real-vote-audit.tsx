@@ -25,6 +25,7 @@ type ComparisonSortKey = (typeof comparisonColumns)[number]["key"];
 
 export function RealVoteAudit({votes,studyId}:{votes:AuditVote[];studyId:number}) {
   const [tab,setTab] = useState<"charts"|"participants"|"review"|"overview">("charts");
+  const [chartPage,setChartPage] = useState(0);
   const [seconds,setSeconds] = useState(1);
   const [burst,setBurst] = useState(8);
   const [removeBurst,setRemoveBurst] = useState(false);
@@ -136,31 +137,14 @@ export function RealVoteAudit({votes,studyId}:{votes:AuditVote[];studyId:number}
   const ratings = ["Vote Up","Vote Down"];
   const bubbleCounts = useMemo(()=>stats.map(s=>ratings.map(rating=>included.filter(v=>v.caption===s.id && voteDirection(v)===rating).length)),[stats,included]);
   const maxBubble = Math.max(1,...bubbleCounts.flat());
-  const shownStats = stats;
+  const chartPageSize=20;
+  const chartPageCount=Math.max(1,Math.ceil(stats.length/chartPageSize));
+  const currentChartPage=Math.min(chartPage,chartPageCount-1);
+  const chartStart=currentChartPage*chartPageSize;
+  const shownStats=stats.slice(chartStart,chartStart+chartPageSize);
+  const shownBubbleCounts=shownStats.map((_,i)=>bubbleCounts[chartStart+i]??[0,0]);
   const overallBefore=percent(analyzed.filter(isPositive).length,analyzed.length);
   const overallAfter=percent(included.filter(isPositive).length,included.length);
-  const exportCsv=()=>{
-    const header=["caption_id","total_votes","included_votes","flagged_votes","original_positive_pct","filtered_positive_pct","difference_pp","original_rank","filtered_rank","rank_change","fast_vote_threshold_seconds","remove_high_frequency","excluded_participants"];
-    const lines=stats.map(s=>[s.id,s.total,s.kept,s.flagged,s.before.toFixed(2),s.after?.toFixed(2)??"",s.delta?.toFixed(2)??"",s.beforeRank??"",s.afterRank??"",s.rankChange??"",seconds,String(removeBurst),excludedUsers.length].map(csvCell).join(","));
-    const url=URL.createObjectURL(new Blob([[header.join(","),...lines].join("\r\n")],{type:"text/csv;charset=utf-8"}));
-    const link=document.createElement("a");link.href=url;link.download=`study-${studyId}-humor-comparison.csv`;link.click();URL.revokeObjectURL(url);
-  };
-  const filtered=analyzed.filter(v=>{
-    if(reviewFilter==="flagged" && !v.reasons.length) return false;
-    if(reviewFilter==="excluded" && !effectiveExcluded.has(v.id)) return false;
-    return !query || [String(v.id),v.user,v.caption,v.value].some(s=>s.toLowerCase().includes(query.toLowerCase()));
-  });
-  const pageCount=Math.max(1,Math.ceil(filtered.length/20));
-  const current=Math.min(page,pageCount-1);
-  const visible=filtered.slice(current*20,current*20+20);
-
-  // Categorical bubble matrix: one circle per (humor, rating), area proportional to votes.
-  const width=1100,left=120,right=20,top=30,bottom=66;
-  const rowH=96;
-  const height=top+bottom+Math.max(1,ratings.length)*rowH;
-  const plotW=width-left-right;
-  const colW=plotW/Math.max(1,stats.length);
-  const radius=(count:number)=>count===0?0:Math.max(1.5,Math.sqrt(count/maxBubble)*Math.min(4.4,colW*.43));
   const rankImprovements=stats.filter(s=>s.rankChange!==null && s.rankChange>0).sort((a,b)=>(b.rankChange??0)-(a.rankChange??0)).slice(0,5);
   const rankDeclines=stats.filter(s=>s.rankChange!==null && s.rankChange<0).sort((a,b)=>(a.rankChange??0)-(b.rankChange??0)).slice(0,5);
   return <main className="min-h-screen bg-slate-50 px-4 py-6 text-slate-900 dark:bg-slate-950 dark:text-slate-100 sm:px-8">
@@ -186,36 +170,54 @@ export function RealVoteAudit({votes,studyId}:{votes:AuditVote[];studyId:number}
 
         <section className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <div><h2 className="text-lg font-semibold">Humor × vote: Up / Down distribution</h2><p className="mt-1 text-sm text-slate-500">Each dot represents votes for a humor and rating combination. Vote Up and Vote Down by humor. All 100 humors fit in one chart; small dot area represents vote count.</p></div>
+            <div><h2 className="text-lg font-semibold">Humor × vote: Up / Down distribution</h2><p className="mt-1 text-sm text-slate-500">A paged heatmap shows the included vote count for each humor and direction. Use the controls to view 20 humors at a time.</p></div>
             <button className={button} onClick={exportCsv} disabled={!stats.length}>Download CSV ↓</button>
           </div>
-          <div className="mt-4 flex flex-wrap items-center gap-5 text-xs text-slate-500">
-            <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-indigo-600"/>Included votes</span>
-            <span>Dot area ∝ vote count</span>
-            <span>Move the time slider to filter votes live</span>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-4 text-xs text-slate-600 dark:text-slate-300">
+              <span className="flex items-center gap-2"><span className="h-3 w-3 rounded-sm bg-blue-600"/>Vote Up</span>
+              <span className="flex items-center gap-2"><span className="h-3 w-3 rounded-sm bg-orange-500"/>Vote Down</span>
+              <span>Darker cells mean more votes; each cell shows its count.</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="mr-1 text-sm tabular-nums text-slate-500">Humors {stats.length ? chartStart+1 : 0}–{Math.min(chartStart+chartPageSize,stats.length)} of {stats.length}</span>
+              <button className={button} onClick={()=>setChartPage(p=>Math.max(0,p-1))} disabled={currentChartPage===0} aria-label="Show previous 20 humors">Previous</button>
+              <button className={button} onClick={()=>setChartPage(p=>Math.min(chartPageCount-1,p+1))} disabled={currentChartPage>=chartPageCount-1} aria-label="Show next 20 humors">Next</button>
+            </div>
           </div>
-          <p className="mt-3 text-sm text-slate-500">All {stats.length} humors are shown at once. Hover over a dot to see its vote count.</p>
-          {stats.length && ratings.length ? <div className="mt-3 w-full">
-            <svg viewBox={`0 0 ${width} ${height}`} className="block h-auto w-full" role="img" aria-label="Bubble chart with humor on horizontal axis and rating categories on vertical axis. Bubble size represents included vote count.">
-              {ratings.map((rating,j)=>{const cy=top+(j+.5)*rowH;return <g key={rating}>
-                <line x1={left} x2={width-right} y1={cy} y2={cy} stroke="currentColor" opacity=".12"/>
-                <text x={left-14} y={cy+5} textAnchor="end" fontSize="14" fill="currentColor">{rating}</text>
-              </g>})}
-              {shownStats.map((s,i)=>{const cx=left+(i+.5)*colW;return <g key={s.id}>
-                <line x1={cx} x2={cx} y1={top} y2={height-bottom} stroke="currentColor" opacity=".09"/>
-                <text x={cx} y={height-bottom+28} textAnchor="middle" fontSize="13" fill="currentColor">{(i===0 || (i+1)%10===0 || i===stats.length-1) ? s.label : ""}</text>
-              </g>})}
-              <line x1={left} x2={left} y1={top} y2={height-bottom} stroke="currentColor" opacity=".5"/>
-              <line x1={left} x2={width-right} y1={height-bottom} y2={height-bottom} stroke="currentColor" opacity=".5"/>
-              {shownStats.map((s,i)=>ratings.map((rating,j)=>{const count=bubbleCounts[i]?.[j]??0;if(!count)return null;const cx=left+(i+.5)*colW,cy=top+(j+.5)*rowH;return <g key={s.id+rating}>
-                <circle cx={cx} cy={cy} r={radius(count)} fill="#4f46e5" fillOpacity=".78" stroke="#312e81" strokeWidth="1.2"><title>{s.label} · {rating}: {count} votes after filtering</title></circle>
-
-              </g>}))}
-              <text x={width/2} y={height-12} textAnchor="middle" fontSize="14" fontWeight="600" fill="currentColor">Humor</text>
-              <text transform={`translate(18 ${height/2}) rotate(-90)`} textAnchor="middle" fontSize="14" fontWeight="600" fill="currentColor">Rating</text>
+          {stats.length && ratings.length ? <div className="mt-3 overflow-x-auto rounded-lg bg-slate-50 p-2 dark:bg-slate-950/40">
+            <svg viewBox={`0 0 ${width} ${height}`} className="block h-auto w-full min-w-[920px]" role="img" aria-label={`Heatmap showing included Vote Up and Vote Down counts for humors ${chartStart+1} through ${Math.min(chartStart+chartPageSize,stats.length)}`}>
+              {ratings.map((rating,j)=>{
+                const y=top+j*rowH;
+                return <g key={rating}>
+                  <rect x={left} y={y+3} width={plotW} height={rowH-6} rx="8" fill={j===0?"#eff6ff":"#fff7ed"} opacity=".8"/>
+                  <text x={left-14} y={y+rowH/2+5} textAnchor="end" fontSize="14" fontWeight="600" fill="currentColor">{rating}</text>
+                </g>;
+              })}
+              {shownStats.map((s,i)=>{
+                const cx=left+(i+.5)*colW;
+                return <g key={s.id}>
+                  <text x={cx} y={height-bottom+22} textAnchor="middle" fontSize="12" fontWeight="600" fill="currentColor">{s.label.replace("Humor ","")}</text>
+                </g>;
+              })}
+              {shownStats.map((s,i)=>ratings.map((rating,j)=>{
+                const count=shownBubbleCounts[i]?.[j]??0;
+                const x=left+(i+.5)*colW-colW*.43;
+                const y=top+j*rowH+8;
+                const cellWidth=colW*.86;
+                const color=j===0?"#2563eb":"#f97316";
+                const opacity=count===0?.12:.2+.8*(count/maxBubble);
+                return <g key={s.id+rating}>
+                  <rect x={x} y={y} width={cellWidth} height={rowH-24} rx="6" fill={color} fillOpacity={opacity} stroke={color} strokeOpacity=".5">
+                    <title>{s.label} · {rating}: {count} included votes</title>
+                  </rect>
+                  <text x={x+cellWidth/2} y={y+(rowH-24)/2+5} textAnchor="middle" fontSize="13" fontWeight="700" fill={count===0?"#475569":"white"}>{count}</text>
+                </g>;
+              }))}
+              <text x={width/2} y={height-7} textAnchor="middle" fontSize="13" fontWeight="600" fill="currentColor">Humor number</text>
             </svg>
           </div> : <p className="py-16 text-center text-sm text-slate-500">No vote ratings available.</p>}
-          <p className="mt-2 text-xs text-slate-500">Bubble counts reflect votes remaining after filtering. For Study 1, synthetic six-level test ratings are grouped into Up (funny/very funny) and Down (all other ratings); original stored records are unchanged.</p>
+          <p className="mt-2 text-xs text-slate-500">Showing 20 humors per page so vote counts stay readable. Color intensity uses one shared scale across the full study. For Study 1, synthetic six-level ratings are grouped into Up (funny/very funny) and Down (all other ratings); original stored records are unchanged.</p>
         </section>
 
         <section className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 sm:p-6">
