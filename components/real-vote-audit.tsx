@@ -161,6 +161,8 @@ export function RealVoteAudit({votes,studyId}:{votes:AuditVote[];studyId:number}
   const plotW=width-left-right;
   const colW=plotW/Math.max(1,stats.length);
   const radius=(count:number)=>count===0?0:Math.max(1.5,Math.sqrt(count/maxBubble)*Math.min(4.4,colW*.43));
+  const rankImprovements=stats.filter(s=>s.rankChange!==null && s.rankChange>0).sort((a,b)=>(b.rankChange??0)-(a.rankChange??0)).slice(0,5);
+  const rankDeclines=stats.filter(s=>s.rankChange!==null && s.rankChange<0).sort((a,b)=>(a.rankChange??0)-(b.rankChange??0)).slice(0,5);
   return <main className="min-h-screen bg-slate-50 px-4 py-6 text-slate-900 dark:bg-slate-950 dark:text-slate-100 sm:px-8">
     <div className="mx-auto max-w-7xl space-y-5">
       <header className="flex flex-wrap items-start justify-between gap-4">
@@ -213,7 +215,41 @@ export function RealVoteAudit({votes,studyId}:{votes:AuditVote[];studyId:number}
               <text transform={`translate(18 ${height/2}) rotate(-90)`} textAnchor="middle" fontSize="14" fontWeight="600" fill="currentColor">Rating</text>
             </svg>
           </div> : <p className="py-16 text-center text-sm text-slate-500">No vote ratings available.</p>}
-          <p className="mt-2 text-xs text-slate-500">Bubble counts reflect votes remaining after filtering. For Study 1, synthetic six-level test ratings are grouped into Up (funny/very funny) and Down (all other ratings); original stored records are unchanged.</p>
+          <p cla        <section className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 sm:p-6">
+          <div className="mb-4">
+            <p className="text-xs font-semibold uppercase tracking-wider text-indigo-600">At a glance</p>
+            <h2 className="mt-1 text-lg font-semibold">Biggest ranking changes after filtering</h2>
+            <p className="mt-1 text-sm text-slate-500">Compare each humor's original rank with its filtered rank. Up means it moved closer to #1; down means it moved lower.</p>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            {[
+              {title:"Moved up the most", items:rankImprovements, color:"bg-emerald-500", tone:"text-emerald-700 dark:text-emerald-300", empty:"No humors moved up at this threshold."},
+              {title:"Moved down the most", items:rankDeclines, color:"bg-rose-500", tone:"text-rose-700 dark:text-rose-300", empty:"No humors moved down at this threshold."}
+            ].map(group=>{
+              const maxShift=Math.max(1,...group.items.map(s=>Math.abs(s.rankChange??0)));
+              return <div key={group.title} className="rounded-lg border border-slate-200 p-4 dark:border-slate-700">
+                <h3 className="font-semibold">{group.title}</h3>
+                {group.items.length ? <ol className="mt-3 space-y-3">
+                  {group.items.map(s=>{
+                    const shift=s.rankChange??0;
+                    return <li key={s.id}>
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <span className="font-medium">{s.label}</span>
+                        <span className="shrink-0 tabular-nums text-slate-500">#{s.beforeRank} → #{s.afterRank}</span>
+                      </div>
+                      <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800" role="img" aria-label={`${s.label} changed ${Math.abs(shift)} ranking places`}>
+                        <div className={`h-full rounded-full ${group.color}`} style={{width:`${Math.max(8,Math.round(Math.abs(shift)/maxShift*100))}%`}}/>
+                      </div>
+                      <p className={`mt-1 text-xs font-medium ${group.tone}`}>{shift>0?`↑ Improved ${shift} places`:`↓ Fell ${Math.abs(shift)} places`}</p>
+                    </li>;
+                  })}
+                </ol> : <p className="mt-3 rounded-md bg-slate-50 p-3 text-sm text-slate-500 dark:bg-slate-800/60">{group.empty}</p>}
+              </div>;
+            })}
+          </div>
+        </section>
+
+ssName="mt-2 text-xs text-slate-500">Bubble counts reflect votes remaining after filtering. For Study 1, synthetic six-level test ratings are grouped into Up (funny/very funny) and Down (all other ratings); original stored records are unchanged.</p>
         </section>
 
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
